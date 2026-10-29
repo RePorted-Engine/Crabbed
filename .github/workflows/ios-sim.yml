@@ -1,0 +1,31 @@
+name: ios-sim
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sim:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add iOS simulator target
+        run: rustup target add aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - name: Build for iOS simulator
+        run: cargo build --release --locked --target aarch64-apple-ios-sim -p horizon-client --no-default-features
+      - name: Upload simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-app
+          path: target/aarch64-apple-ios-sim/release/horizon-client
+          if-no-files-found: error

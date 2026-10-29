@@ -1,0 +1,47 @@
+name: android
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+      - name: Add Android target
+        run: rustup target add aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - name: Build Android lib
+        run: |
+          export ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME
+          bin=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+          export CC_aarch64_linux_android=$bin/aarch64-linux-android26-clang
+          export AR_aarch64_linux_android=$bin/llvm-ar
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$CC_aarch64_linux_android
+          cargo build --release --manifest-path crates/horizon-android/Cargo.toml --target aarch64-linux-android
+      - name: Package APK
+        run: |
+          mkdir -p apk/lib/arm64-v8a
+          cp target/aarch64-linux-android/release/libhorizon_android.so apk/lib/arm64-v8a/ 2>/dev/null || cp target/aarch64-linux-android/release/deps/libhorizon_android.so apk/lib/arm64-v8a/ 2>/dev/null || true
+          cp packaging/android/AndroidManifest.xml apk/
+          # Basic APK packaging would require aapt2 - simplified for artifact
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: horizon-android
+          path: target/aarch64-linux-android/release/libhorizon_android.so
+          if-no-files-found: error
