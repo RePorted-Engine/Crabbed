@@ -1,0 +1,51 @@
+name: xbox
+# Horizon for Xbox One (Dev Mode): crates/horizon-xbox built for Windows x64, packed as a UWP .msix with
+# packaging/xbox, signed with a throwaway CN=Horizon certificate, and uploaded with that certificate.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        # The C runtime linked in (an Xbox's UWP container has no desktop vcruntime140.dll), and the
+        # AppContainer bit a UWP executable must carry: without it the console answers 0x80070002.
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static -C link-arg=/APPCONTAINER
+        run: cargo build --release --locked -p horizon-xbox
+      - name: Pack and sign
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $kit = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64" | Sort-Object Name | Select-Object -Last 1
+          $layout = New-Item -ItemType Directory -Force layout
+          Copy-Item target\release\horizon_xbox.exe $layout
+          Copy-Item packaging\xbox\AppxManifest.xml $layout
+          Copy-Item -Recurse packaging\xbox\Assets $layout
+          & "$($kit.FullName)\makeappx.exe" pack /o /d layout /p Horizon-xbox.msix
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Horizon" `
+            -CertStoreLocation Cert:\CurrentUser\My -TextExtension @("2.5.29.19={text}")
+          $password = ConvertTo-SecureString -String "horizon" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath horizon.pfx -Password $password | Out-Null
+          Export-Certificate -Cert $cert -FilePath Horizon-xbox.cer | Out-Null
+          & "$($kit.FullName)\signtool.exe" sign /fd SHA256 /f horizon.pfx /p horizon Horizon-xbox.msix
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: horizon-xbox
+          path: |
+            Horizon-xbox.msix
+            Horizon-xbox.cer
+          if-no-files-found: error
