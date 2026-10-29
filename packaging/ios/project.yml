@@ -1,0 +1,181 @@
+# Horizon's iOS app shell, as an XcodeGen spec.
+#
+# Xcode does not like being edited in source control, so the repository keeps this file and
+# `xcodegen` writes HorizonIOS.xcodeproj from it:
+#   brew install xcodegen && cd packaging/ios && xcodegen generate
+# Generating from this directory matters: $(SRCROOT) below is this directory.
+#
+# The Rust half is not an Xcode dependency: `cargo` cross-compiles it into one static archive and the
+# linker picks it up by name from the search path, so a fresh clone with no archive still generates a
+# project. Building that project fails at the link step, which is the honest error, and
+# .github/workflows/ios.yml is what runs both halves in order.
+name: HorizonIOS
+options:
+  pathBase: project
+  createIntermediateGroups: true
+  # Pinned, because the current XcodeGen default writes a project file a older Xcode cannot open: the
+  # iOS workflow's runner is Xcode 15.4 and its default gave format 77, which 15.4 refuses with
+  # "Unable to read project". Any newer Xcode reads a 15.3 project happily, so this is the format
+  # that costs nothing and works everywhere; raise it when the workflow's runner moves.
+  projectFormat: xcode15_3
+  xcodeVersion: "15.4"
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    IPHONEOS_DEPLOYMENT_TARGET: 16.0
+    ENABLE_STRICT_OBJC_MSGSEND: YES
+    GCC_NO_COMMON_BLOCKS: YES
+    # Both bundles take their icon from Assets.xcassets. Xcode compiles the catalog into the app's
+    # Assets.car; the plist names it, because these targets write their own Info.plist rather than
+    # having one generated (GENERATE_INFOPLIST_FILE: NO), and a generated plist is where Xcode would
+    # otherwise add CFBundleIconName for you.
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    # Named here rather than in each script because a build phase's environment is Xcode's, not the shell that
+    # launched it: the workflow's $IOS_TARGET does not exist inside Xcode, and the Cargo phase has to ask for the
+    # same target the phone build is measured with. Build settings are exported to script phases, so both halves
+    # read one value.
+    IOS_TARGET: aarch64-apple-ios
+targets:
+  Horizon:
+    type: application
+    platform: iOS
+    productName: Horizon
+    sources:
+      - path: Sources
+      - path: Assets.xcassets
+    settings:
+      base:
+        INFOPLIST_FILE: Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        PRODUCT_BUNDLE_IDENTIFIER: dev.horizon.ios
+        PRODUCT_NAME: Horizon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # The crate's C header, kept beside the Rust it describes so the two cannot drift apart.
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/../../crates/horizon-ios/include
+        LIBRARY_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/../../target/aarch64-apple-ios/release
+        # -lhorizon_ios, not a file reference: the archive is Cargo's output, its path depends on
+        # the profile, and Xcode would otherwise want it checked in.
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - -lhorizon_ios
+
+  # The game, in a bundle Xcode can sign. Two build phases and one placeholder source make this work:
+  #
+  #   1. Cargo builds `horizon-client` for the phone (the pre-compile phase). rustc cannot emit a library from
+  #      a bin target, and `Game` is bin-only code, so there is no archive for Xcode to link here -- unlike the
+  #      shell above, whose crate is a library written to be linked.
+  #   2. Xcode links GameShell/main.m, which does nothing but exist so the target has an executable.
+  #   3. The post-compile phase overwrites that executable with the Rust one, and Xcode signs the bundle
+  #      afterwards, so what reaches the phone is the game under a signature automatic provisioning made.
+  #
+  # That ordering is the whole reason for the placeholder: signing and provisioning a hand-built bundle from a
+  # shell script needs a certificate and a profile nobody here has, while pressing Run does not.
+  HorizonGame:
+    type: application
+    platform: iOS
+    productName: HorizonGame
+    sources:
+      - path: GameShell
+      - path: Assets.xcassets
+    # The launcher, copied into Frameworks/ and signed with the game.
+    dependencies:
+      - target: HorizonLauncherKit
+        embed: true
+    preBuildScripts:
+      - name: Build the game with Cargo
+        shell: /bin/bash
+        showEnvVarsInLog: false
+        script: |
+          set -euo pipefail
+          # Xcode runs build phases in a shell whose PATH is not your terminal's: rustup's binaries live in
+          # ~/.cargo/bin, which only a login shell adds. Say so rather than reporting "cargo not found".
+          export PATH="$HOME/.cargo/bin:$PATH"
+          command -v cargo >/dev/null 2>&1 || {
+            echo "error: no cargo on PATH. Install Rust with https://rustup.rs, or run Xcode from a terminal." >&2
+            exit 1
+          }
+          sysroot=$(rustc --print sysroot)
+          test -d "$sysroot/lib/rustlib/$IOS_TARGET/lib" || {
+            echo "error: Rust has no standard library for $IOS_TARGET. Run: rustup target add $IOS_TARGET" >&2
+            exit 1
+          }
+          cd "$SRCROOT/../.."
+          # CI builds the game in its own step first and sets this, so the bundle step does not compile it twice.
+          if [ -n "${HORIZON_GAME_PREBUILT:-}" ] && [ -x "target/$IOS_TARGET/release/horizon-client" ]; then
+            echo "Horizon: using the game Cargo already built (HORIZON_GAME_PREBUILT)."
+            exit 0
+          fi
+          # The profile and flags the workflow builds with, so what a player runs from Xcode is what CI measured.
+          # `audio` is cpal, whose CoreAudio backend plays through RemoteIO on a phone; `controllers` stays off
+          # (gilrs and hidapi want libudev or IOKit: GameController reads pads instead).
+          cargo build --release --locked --target "$IOS_TARGET" -p horizon-client --no-default-features --features audio
+    postCompileScripts:
+      - name: Put the Rust game in the bundle
+        shell: /bin/bash
+        showEnvVarsInLog: false
+        script: |
+          set -euo pipefail
+          game="$SRCROOT/../../target/$IOS_TARGET/release/horizon-client"
+          test -x "$game" || {
+            echo "error: the Cargo phase reported success and left no $game" >&2
+            exit 1
+          }
+          dest="$BUILT_PRODUCTS_DIR/$EXECUTABLE_PATH"
+          cp "$game" "$dest"
+          chmod +x "$dest"
+          # Named in the log because a bundle whose executable was replaced is the thing a reader of a later
+          # build log cannot tell from one that wasn't: both are called Horizon.
+          echo "Horizon: $dest is now the Rust game, $(stat -f %z "$dest") bytes."
+    settings:
+      base:
+        INFOPLIST_FILE: GameInfo.plist
+        GENERATE_INFOPLIST_FILE: NO
+        PRODUCT_BUNDLE_IDENTIFIER: dev.horizon.game
+        PRODUCT_NAME: HorizonGame
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # The name inside the bundle, so GameInfo.plist's CFBundleExecutable is true of this build as well as of
+        # the hand-assembled one the workflow zips. Two ways to make the same app, one executable name.
+        EXECUTABLE_NAME: Horizon
+
+  # The launcher, in SwiftUI, as a framework the game's bundle embeds: one .ipa. The game owns the process
+  # (winit runs UIKit's main loop), so the launcher cannot run first; horizon-ios-launcher dlopens this
+  # framework once the game's window is up and calls its horizon_launcher_present, which covers the game until
+  # Play. The launcher uses system fonts and native SwiftUI controls.
+  HorizonLauncherKit:
+    type: framework
+    platform: iOS
+    productName: HorizonLauncherKit
+    sources:
+      - path: Launcher
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: dev.horizon.game.launcher
+        PRODUCT_NAME: HorizonLauncherKit
+        # The project names AppIcon for the two apps; a framework has no icon, and its catalog none to find.
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        SWIFT_VERSION: "5.0"
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+# Two schemes, so the run destination picker says which app is about to launch: the probe shell and the game.
+schemes:
+  Horizon shell:
+    build:
+      targets:
+        Horizon: All
+    run:
+      config: Release
+  Horizon game:
+    build:
+      targets:
+        HorizonGame: All
+    run:
+      config: Release

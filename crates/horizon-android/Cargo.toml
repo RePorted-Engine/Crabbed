@@ -1,0 +1,61 @@
+# The game for Android phones and tablets: `horizon-client`'s bin code (main.rs, game.rs, game/) built as the
+# shared library a NativeActivity loads. rustc emits no library from a bin target, so this package names the
+# bin's own root as its lib; nothing is copied. Its own workspace (the root one excludes it) so that host
+# builds never compile the whole game twice. See packaging/android/README.md.
+[package]
+name = "horizon-android"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace]
+
+[lib]
+path = "../horizon-client/src/main.rs"
+crate-type = ["cdylib"]
+
+# The crates main.rs and game/ name directly: keep in step with horizon-client's [dependencies].
+[dependencies]
+horizon-client = { path = "../horizon-client", default-features = false }
+horizon-assets = { path = "../horizon-assets" }
+horizon-core = { path = "../horizon-core" }
+horizon-threads = { path = "../horizon-threads" }
+horizon-world = { path = "../horizon-world" }
+horizon-protocol = { path = "../horizon-protocol" }
+horizon-shaders = { path = "../horizon-shaders" }
+horizon-shader-api = { path = "../horizon-shader-api" }
+horizon-friends = { path = "../horizon-friends" }
+horizon-mods = { path = "../horizon-mods", default-features = false }
+horizon-telemetry = { path = "../horizon-telemetry", default-features = false, features = ["live"] }
+horizon-bench = { path = "../horizon-bench" }
+horizon-gamecontroller = { path = "../horizon-gamecontroller" }
+horizon-airplay = { path = "../horizon-airplay" }
+horizon-ios-launcher = { path = "../horizon-ios-launcher" }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "vulkan", "wgsl", "naga-ir"] }
+# NativeActivity: an app with no Java in it (packaging/android/AndroidManifest.xml).
+winit = { version = "0.30.13", features = ["android-native-activity"] }
+pollster = "0.4"
+stacker = "0.1"
+glam = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["raw_value"] }
+log = "0.4"
+chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
+
+[features]
+default = ["audio"]
+# AAudio, through cpal.
+audio = ["horizon-client/audio"]
+# Named because game/ asks for them; gilrs and hidapi have no Android backend, and wasmtime's JIT is untested here.
+controllers = []
+mods = ["horizon-client/mods"]
+
+[patch.crates-io]
+wgpu-hal = { path = "../../third_party/wgpu-hal" }
+winit = { path = "../../third_party/winit" }
+
+[profile.release]
+codegen-units = 16
+# A phone has no debugger attached to read them; they were most of a 270 MB library.
+strip = "debuginfo"

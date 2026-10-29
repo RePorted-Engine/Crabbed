@@ -1,0 +1,17 @@
+[package]
+name = "horizon-gamecontroller"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.85"
+description = "Controllers on iPhone and iPad through Apple's GameController framework, as plain snapshots"
+
+# Empty everywhere but iOS: the crate is a dependency of every build of the client, and only a phone has
+# nothing else to read a pad with (gilrs has no iOS backend).
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6.3"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSString"] }
+objc2-game-controller = { version = "0.3.2", default-features = false, features = ["std", "GCKeyboard", "GCMouse", "GCController", "GCDevice", "GCExtendedGamepad", "GCPhysicalInputProfile", "GCControllerElement", "GCControllerButtonInput", "GCControllerAxisInput", "GCControllerDirectionPad"] }
+
+[lints]
+workspace = true

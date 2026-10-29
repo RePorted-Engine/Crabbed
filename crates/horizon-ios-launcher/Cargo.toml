@@ -1,0 +1,15 @@
+[package]
+name = "horizon-ios-launcher"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.85"
+description = "Shows the SwiftUI launcher (packaging/ios/Launcher) over the game on iPhone and iPad"
+
+# Empty everywhere but iOS: the launcher is a Swift framework only an iOS bundle carries.
+[target.'cfg(target_os = "ios")'.dependencies]
+libc = "0.2"
+log = "0.4"
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "horizon-airplay"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.85"
+description = "The game on an AirPlay display from iPhone and iPad, with the phone saying so"
+
+[dependencies]
+raw-window-handle = "0.6"
+
+# Empty everywhere but iOS: only a phone has an AirPlay screen of its own to give the game.
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6.3"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSObject", "NSSet", "NSEnumerator", "NSString", "NSArray", "objc2-core-foundation"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-ui-kit = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-foundation", "UIApplication", "UIColor", "UIFont", "UILabel", "UIResponder", "UIScene", "UISceneDefinitions", "UISceneOptions", "UISceneSession", "UIScreen", "UIView", "UIViewController", "UIWindow", "UIWindowScene", "NSText"] }
+
+[lints]
+workspace = true

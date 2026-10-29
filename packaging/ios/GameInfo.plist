@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The game bundle's Info.plist, for the .ipa whose executable is the cross-compiled `horizon-client` binary.
+  Unlike packaging/ios/Info.plist this one carries no `$(MARKETING_VERSION)` placeholders: the game's bundle is
+  assembled by hand in .github/workflows/ios.yml (rustc emits an executable, and Xcode is never asked to), so
+  nothing substitutes for Xcode and the versions are written here. Keep them beside project.yml's.
+
+  There is no principal class, no nib and no storyboard, on purpose: winit 0.30's iOS backend passes its own
+  `UIApplicationDelegate` class to `UIApplicationMain`, and a delegate named here would replace the one the
+  game's window comes from.
+
+  UIFileSharingEnabled is the decided way assets arrive, prepared off-device and copied in by hand. It puts the
+  game's Documents folder (saves, `options.txt`, `.horizon-cache`) in the Files app on the phone, so the copy is
+  something a player can do with no developer tool attached.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Horizon</string>
+	<key>CFBundleExecutable</key>
+	<string>Horizon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.horizon.game</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Horizon</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<!-- The Azure app the launcher signs Microsoft accounts in with (packaging/ios/Launcher/MicrosoftAccount.swift):
+	     Horizon's own approved one, never another launcher's. Empty here; .github/workflows/ios.yml fills it
+	     from the repository variable HORIZON_MSA_CLIENT_ID. Empty, the launcher says sign-in isn't set up. -->
+	<key>HorizonMSAClientID</key>
+	<string></string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>MinimumOSVersion</key>
+	<string>16.0</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Horizon is MIT licensed. Not an official Minecraft product; not approved by or associated with Mojang or Microsoft.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<!-- With UIFileSharingEnabled, this is what lists Documents under "On My iPhone" in the Files app:
+	     sharing alone reaches it only from a computer (Finder, iTunes). -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<!-- The launcher downloads game files from a link (packaging/ios/Launcher/GameFiles.swift). A computer on the
+	     same Wi-Fi rarely has a certificate, so plain http is allowed to local addresses only; anything on the
+	     internet still needs https, which also keeps an access token off the wire. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Horizon finds worlds opened to LAN, and takes game files from your computer on this network.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>Horizon</string>
+					<key>UISceneDelegateClassName</key>
+					<string>WinitSceneDelegate</string>
+				</dict>
+			</array>
+			<key>UIWindowSceneSessionRoleExternalDisplayNonInteractive</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>AirPlay</string>
+					<key>UISceneDelegateClassName</key>
+					<string>HorizonAirPlayDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIDeviceFamily</key>
+	<array>
+		<integer>1</integer>
+		<integer>2</integer>
+	</array>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+		<string>metal</string>
+	</array>
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<!-- Portrait is for the launcher (packaging/ios/Launcher), which stands upright over the game; the game's
+	     own view controller (winit, ValidOrientations::Landscape) keeps the game sideways. -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>
