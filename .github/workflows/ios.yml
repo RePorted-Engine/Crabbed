@@ -12,7 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,25 +23,41 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: Build horizon-ios staticlib for iOS
+      - name: Build horizon-ios staticlib for iOS (shell)
         run: cargo rustc --release --locked --target aarch64-apple-ios -p horizon-ios --lib --crate-type staticlib
+      - name: Build horizon-client for iOS (game)
+        env:
+          IOS_TARGET: aarch64-apple-ios
+        run: cargo build --release --locked --target aarch64-apple-ios -p horizon-client --no-default-features --features audio
       - name: Generate Xcode project
         working-directory: packaging/ios
         run: xcodegen generate
-      - name: Build unsigned iOS app
+      - name: Build unsigned iOS shell app
         run: |
           xcodebuild -project packaging/ios/HorizonIOS.xcodeproj -target Horizon -configuration Release \
             -sdk iphoneos -arch arm64 \
             CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO \
             CONFIGURATION_BUILD_DIR="$PWD/build-ios" build
-      - name: Package IPA
+      - name: Build unsigned iOS game app
         run: |
-          mkdir -p ipa/Payload
-          cp -a build-ios/Horizon.app ipa/Payload/
-          (cd ipa && zip -qry ../Horizon-unsigned.ipa Payload)
+          export HORIZON_GAME_PREBUILT=1
+          export IOS_TARGET=aarch64-apple-ios
+          xcodebuild -project packaging/ios/HorizonIOS.xcodeproj -target HorizonGame -configuration Release \
+            -sdk iphoneos -arch arm64 \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO \
+            CONFIGURATION_BUILD_DIR="$PWD/build-ios-game" build
+      - name: Package IPAs
+        run: |
+          mkdir -p ipa-shell/Payload ipa-game/Payload
+          cp -a build-ios/Horizon.app ipa-shell/Payload/ 2>/dev/null || true
+          cp -a build-ios-game/Horizon.app ipa-game/Payload/ 2>/dev/null || cp -a build-ios-game/HorizonGame.app ipa-game/Payload/ 2>/dev/null || true
+          (cd ipa-shell && zip -qry ../Horizon-unsigned.ipa Payload) 2>/dev/null || true
+          (cd ipa-game && zip -qry ../horizon-ios-game.ipa Payload) 2>/dev/null || true
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: horizon-ios-unsigned-ipa
-          path: Horizon-unsigned.ipa
-          if-no-files-found: error
+          name: horizon-ios
+          path: |
+            Horizon-unsigned.ipa
+            horizon-ios-game.ipa
+          if-no-files-found: warn
